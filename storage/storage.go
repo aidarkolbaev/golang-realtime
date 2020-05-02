@@ -3,7 +3,6 @@ package storage
 import (
 	"errors"
 	"github.com/go-redis/redis/v7"
-	"smotri.me/config"
 	"smotri.me/model"
 	"smotri.me/pkg/utils"
 	"time"
@@ -14,28 +13,14 @@ type Storage interface {
 	GetTempRoom(roomID string) (*model.Room, error)
 	IncrVisits() (int64, error)
 	RoomExist(roomID string) bool
-	Close() error
 }
 
 type storage struct {
 	rdb *redis.Client
 }
 
-func New(c *config.Config) (Storage, error) {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     c.RedisAddr,
-		Password: c.RedisPassword,
-		DB:       c.RedisDB,
-	})
-	err := rdb.Ping().Err()
-	if err != nil {
-		return nil, err
-	}
-	return &storage{rdb: rdb}, nil
-}
-
-func (s *storage) Close() error {
-	return s.rdb.Close()
+func New(rdb *redis.Client) Storage {
+	return &storage{rdb: rdb}
 }
 
 func (s *storage) CreateTempRoom(room *model.Room, exp time.Duration) (string, error) {
