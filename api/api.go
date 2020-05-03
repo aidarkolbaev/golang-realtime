@@ -21,25 +21,25 @@ import (
 )
 
 type API struct {
-	echo       *echo.Echo
-	config     *config.Config
-	storage    storage.Storage
-	pubSub     *pubsub.PubSub
-	msgBroker  msgbroker.MessageBroker
-	workerPool *workerpool.WorkerPool
+	echo            *echo.Echo
+	config          *config.Config
+	storage         storage.Storage
+	pubSub          *pubsub.PubSub
+	msgBroker       msgbroker.MessageBroker
+	workerPool      *workerpool.WorkerPool
+	messagesChannel string
 }
 
 func New(c *config.Config, s storage.Storage, mb msgbroker.MessageBroker) *API {
 	api := &API{
-		echo:       echo.New(),
-		config:     c,
-		storage:    s,
-		pubSub:     pubsub.New(websocket.Pusher{}),
-		msgBroker:  mb,
-		workerPool: workerpool.New(c.MaxWorkers),
+		echo:            echo.New(),
+		config:          c,
+		storage:         s,
+		pubSub:          pubsub.New(websocket.Pusher{}),
+		msgBroker:       mb,
+		workerPool:      workerpool.New(c.MaxWorkers),
+		messagesChannel: "messages:",
 	}
-
-	err := api.msgBroker.Subscribe("messages", api.handleMessages)
 
 	api.echo.HideBanner = true
 	api.echo.Use(middleware.CORS())
@@ -53,6 +53,10 @@ func New(c *config.Config, s storage.Storage, mb msgbroker.MessageBroker) *API {
 }
 
 func (api *API) Start() error {
+	err := api.msgBroker.Subscribe(api.messagesChannel+"*", api.handleMessages)
+	if err != nil {
+		return err
+	}
 	return api.echo.Start(":" + strconv.Itoa(api.config.HttpPort))
 }
 
@@ -132,14 +136,13 @@ func (api *API) websocket(c echo.Context) error {
 
 // Serves user websocket connection
 func (api *API) serveUser(u *model.User) {
-	api.pubSub.Subscribe(u, u.RoomID)
-
-	ticker := time.NewTicker(time.Second * 30)
-	defer ticker.Stop()
-
 	done := make(chan bool)
 
-	go func() {
+	onConnect := func() {
+		api.pubSub.Subscribe(u, u.RoomID)
+		ticker := time.NewTicker(time.Second * 30)
+		defer ticker.Stop()
+
 		for {
 			select {
 			case <-done:
@@ -152,38 +155,84 @@ func (api *API) serveUser(u *model.User) {
 				}
 			}
 		}
-	}()
+	}
+
+	onDisconnect := func() {
+		done <- true
+		_ = u.Conn.Close()
+		api.pubSub.Unsubscribe(u, u.RoomID)
+		log.Infof("user %s disconnected from room %s", u.Name, u.RoomID)
+	}
+
+	sendResponse := func(ID string, code int) {
+		res := &websocket.Response{
+			ID: ID,
+			Result: map[string]interface{}{
+				"success": code == 200,
+				"code":    code,
+			},
+		}
+
+		b, err := json.Marshal(res)
+		if err != nil {
+			log.Error(err)
+		} else {
+			err = wsutil.WriteServerText(u.Conn, b)
+			if err != nil {
+				log.Error(err)
+			}
+		}
+	}
+
+	go onConnect()
+	defer onDisconnect()
 
 	for {
 		b, err := wsutil.ReadClientText(u.Conn)
 		if err != nil {
-			done <- true
 			break
 		}
+
 		var req websocket.Request
 		err = json.Unmarshal(b, &req)
 		if err != nil {
-
+			sendResponse("", 422)
+			continue
 		}
 
-		// TODO implement
-		err = api.msgBroker.Publish(b, "messages")
-	}
+		if err = req.Validate(); err != nil {
+			log.Warn(err)
+			sendResponse(req.ID, 422)
+			continue
+		}
 
-	api.pubSub.Unsubscribe(u, u.RoomID)
-	_ = u.Conn.Close()
-	log.Infof("user %s disconnected from room %s", u.Name, u.RoomID)
+		req.UserID = u.ID
+		req.RoomID = u.RoomID
+		req.SentAt = time.Now()
+		b, err = json.Marshal(&req)
+		if err != nil {
+			log.Error(err)
+			sendResponse(req.ID, 500)
+			continue
+		}
+
+		err = api.msgBroker.Publish(b, api.messagesChannel+req.RoomID)
+		if err != nil {
+			log.Warn(err)
+			sendResponse(req.ID, 500)
+		} else {
+			sendResponse(req.ID, 200)
+		}
+	}
 }
 
 // Message handler
 func (api *API) handleMessages(msg *msgbroker.Message) {
 	api.workerPool.Submit(func() {
-		var req websocket.Request
-		err := json.Unmarshal(msg.Data, &req)
-		if err != nil {
-			log.Error(err)
-			return
+		log.Info(msg.Channel)
+		if len(msg.Channel) > len(api.messagesChannel) {
+			roomID := msg.Channel[len(api.messagesChannel):]
+			api.pubSub.Publish(msg.Data, roomID)
 		}
-		api.pubSub.Publish(msg.Data, req.User.RoomID)
 	})
 }

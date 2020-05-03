@@ -29,7 +29,7 @@ func (rb *redisBroker) serveMessages() {
 	for msg := range rb.pubSub.Channel() {
 		go func() {
 			rb.RLock()
-			handler, exists := rb.handlers[msg.Channel]
+			handler, exists := rb.handlers[msg.Pattern]
 			rb.RUnlock()
 			if exists {
 				handler(&Message{
@@ -52,8 +52,8 @@ func (rb *redisBroker) Publish(msg []byte, channel string) error {
 	return nil
 }
 
-func (rb *redisBroker) Subscribe(channel string, cb MessageHandler) error {
-	err := rb.pubSub.Subscribe(channel)
+func (rb *redisBroker) Subscribe(pattern string, cb MessageHandler) error {
+	err := rb.pubSub.PSubscribe(pattern)
 	if err != nil {
 		return err
 	}
@@ -62,19 +62,19 @@ func (rb *redisBroker) Subscribe(channel string, cb MessageHandler) error {
 		return err
 	}
 	rb.Lock()
-	rb.handlers[channel] = cb
+	rb.handlers[pattern] = cb
 	rb.Unlock()
 	return nil
 }
 
-func (rb *redisBroker) Unsubscribe(channels ...string) error {
-	if len(channels) > 0 {
+func (rb *redisBroker) Unsubscribe(patterns ...string) error {
+	if len(patterns) > 0 {
 		rb.Lock()
-		for _, ch := range channels {
+		for _, ch := range patterns {
 			delete(rb.handlers, ch)
 		}
 		rb.Unlock()
-		return rb.pubSub.Unsubscribe(channels...)
+		return rb.pubSub.PUnsubscribe(patterns...)
 	}
 	return nil
 }

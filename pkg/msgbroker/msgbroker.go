@@ -4,10 +4,10 @@ package msgbroker
 type MessageBroker interface {
 	// Publish sends msg to channels
 	Publish(msg []byte, channel string) error
-	// Subscribe returns Message channel that subscribed to channels
-	Subscribe(channel string, cb MessageHandler) error
-	// Unsubscribe from the given channels
-	Unsubscribe(channels ...string) error
+	// Subscribe subscribes to channels by pattern
+	Subscribe(pattern string, cb MessageHandler) error
+	// Unsubscribe from the channels by patterns
+	Unsubscribe(patterns ...string) error
 	// Close closes subscriptions
 	Close() error
 }
