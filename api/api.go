@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"github.com/aidarkolbaev/pubsub"
 	"github.com/gammazero/workerpool"
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
@@ -21,24 +20,22 @@ import (
 )
 
 type API struct {
-	echo            *echo.Echo
-	config          *config.Config
-	storage         storage.Storage
-	pubSub          *pubsub.PubSub
-	msgBroker       msgbroker.MessageBroker
-	workerPool      *workerpool.WorkerPool
-	messagesChannel string
+	echo       *echo.Echo
+	config     *config.Config
+	storage    storage.Storage
+	msgBroker  msgbroker.MessageBroker
+	workerPool *workerpool.WorkerPool
+	channels   websocket.Channels
 }
 
 func New(c *config.Config, s storage.Storage, mb msgbroker.MessageBroker) *API {
 	api := &API{
-		echo:            echo.New(),
-		config:          c,
-		storage:         s,
-		pubSub:          pubsub.New(websocket.Pusher{}),
-		msgBroker:       mb,
-		workerPool:      workerpool.New(c.MaxWorkers),
-		messagesChannel: "messages:",
+		echo:       echo.New(),
+		config:     c,
+		storage:    s,
+		msgBroker:  mb,
+		workerPool: workerpool.New(c.MaxWorkers),
+		channels:   websocket.NewChannels(),
 	}
 
 	api.echo.HideBanner = true
@@ -47,13 +44,13 @@ func New(c *config.Config, s storage.Storage, mb msgbroker.MessageBroker) *API {
 	api.echo.GET("/", api.ping)
 	api.echo.POST("/room", api.createRoom)
 	api.echo.GET("/room/:roomID", api.getRoom)
-	api.echo.Any("/ws", api.websocket)
+	api.echo.Any("/ws", api.websocketHandler)
 
 	return api
 }
 
 func (api *API) Start() error {
-	err := api.msgBroker.Subscribe(api.messagesChannel+"*", api.handleMessages)
+	err := api.msgBroker.Subscribe("messages:*", api.handleMessages)
 	if err != nil {
 		return err
 	}
@@ -62,7 +59,6 @@ func (api *API) Start() error {
 
 func (api *API) Close() error {
 	api.workerPool.StopWait()
-	_ = api.msgBroker.Close()
 	return api.echo.Close()
 }
 
@@ -106,8 +102,8 @@ func (api *API) getRoom(c echo.Context) error {
 	return c.JSON(http.StatusOK, room)
 }
 
-// Endpoint to establish websocket connection
-func (api *API) websocket(c echo.Context) error {
+// Endpoint to establish websocketHandler connection
+func (api *API) websocketHandler(c echo.Context) error {
 	username := c.QueryParam("username")
 	roomID := c.QueryParam("room_id")
 	if !api.storage.RoomExist(roomID) {
@@ -125,7 +121,7 @@ func (api *API) websocket(c echo.Context) error {
 	}
 
 	user := &model.User{
-		ID:     roomID + username + utils.RandString(3),
+		ID:     roomID + utils.RandString(5),
 		Name:   username,
 		RoomID: roomID,
 		Conn:   conn,
@@ -134,12 +130,12 @@ func (api *API) websocket(c echo.Context) error {
 	return nil
 }
 
-// Serves user websocket connection
+// Serves user websocketHandler connection
 func (api *API) serveUser(u *model.User) {
 	done := make(chan bool)
 
 	onConnect := func() {
-		api.pubSub.Subscribe(u, u.RoomID)
+		api.channels.Subscribe(u, u.RoomID)
 		ticker := time.NewTicker(time.Second * 30)
 		defer ticker.Stop()
 
@@ -160,7 +156,7 @@ func (api *API) serveUser(u *model.User) {
 	onDisconnect := func() {
 		done <- true
 		_ = u.Conn.Close()
-		api.pubSub.Unsubscribe(u, u.RoomID)
+		api.channels.Unsubscribe(u, u.RoomID)
 		log.Infof("user %s disconnected from room %s", u.Name, u.RoomID)
 	}
 
@@ -216,7 +212,7 @@ func (api *API) serveUser(u *model.User) {
 			continue
 		}
 
-		err = api.msgBroker.Publish(b, api.messagesChannel+req.RoomID)
+		err = api.msgBroker.Publish(b, "messages:"+req.RoomID)
 		if err != nil {
 			log.Warn(err)
 			sendResponse(req.ID, 500)
@@ -230,9 +226,17 @@ func (api *API) serveUser(u *model.User) {
 func (api *API) handleMessages(msg *msgbroker.Message) {
 	api.workerPool.Submit(func() {
 		log.Info(msg.Channel)
-		if len(msg.Channel) > len(api.messagesChannel) {
-			roomID := msg.Channel[len(api.messagesChannel):]
-			api.pubSub.Publish(msg.Data, roomID)
+		if len(msg.Channel) > len("messages:") {
+			roomID := msg.Channel[len("messages:"):]
+			log.Info("roomID:" + roomID)
+			users := api.channels.GetSubscribers(roomID)
+			for _, u := range users {
+				err := wsutil.WriteServerText(u.Conn, msg.Data)
+				if err != nil {
+					log.Warn(err)
+				}
+			}
 		}
+
 	})
 }

@@ -20,14 +20,6 @@ type (
 	}
 )
 
-func (u *User) GetID() string {
-	return u.ID
-}
-
-func (u *User) Write(p []byte) (int, error) {
-	return u.Conn.Write(p)
-}
-
 func (r *Room) Valid() bool {
 	return utils.IsLengthValid(r.Title, 2, 100) && utils.IsUrlValid(r.MovieURL)
 }

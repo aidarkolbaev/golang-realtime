@@ -25,7 +25,7 @@ func New(rdb *redis.Client) Storage {
 
 func (s *storage) CreateTempRoom(room *model.Room, exp time.Duration) (string, error) {
 	var ID string
-	for i := 3; i <= 20; i++ {
+	for i := 5; i <= 15; i++ {
 		newID := utils.RandString(i)
 		if !s.RoomExist(newID) {
 			ID = newID
@@ -34,7 +34,7 @@ func (s *storage) CreateTempRoom(room *model.Room, exp time.Duration) (string, e
 	}
 
 	if ID == "" {
-		return "", errors.New("unable to generate a unique ID")
+		return "", errors.New("unable to generate an unique ID")
 	}
 
 	data := map[string]interface{}{

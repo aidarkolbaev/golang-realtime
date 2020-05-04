@@ -3,7 +3,6 @@ module smotri.me
 go 1.13
 
 require (
-	github.com/aidarkolbaev/pubsub v0.3.0
 	github.com/gammazero/workerpool v0.0.0-20200311205957-7b00833861c6
 	github.com/go-redis/redis/v7 v7.2.0
 	github.com/gobwas/httphead v0.0.0-20180130184737-2c6c146eadee // indirect
@@ -12,4 +11,5 @@ require (
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/labstack/echo/v4 v4.1.16
 	github.com/labstack/gommon v0.3.0
+	github.com/stretchr/testify v1.4.0
 )
