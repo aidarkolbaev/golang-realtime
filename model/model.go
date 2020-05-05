@@ -7,9 +7,10 @@ import (
 
 type (
 	Room struct {
-		ID       string `json:"id"`
-		Title    string `json:"title"`
-		MovieURL string `json:"movie_url"`
+		ID       string  `json:"id"`
+		Title    string  `json:"title"`
+		MovieURL string  `json:"movie_url"`
+		Members  []*User `json:"members"`
 	}
 
 	User struct {

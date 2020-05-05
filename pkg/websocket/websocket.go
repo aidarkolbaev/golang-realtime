@@ -20,18 +20,13 @@ type (
 		storage map[string]map[string]*model.User
 	}
 
-	Request struct {
+	Message struct {
 		ID     string                 `json:"id"`
 		UserID string                 `json:"user_id"`
 		RoomID string                 `json:"room_id"`
 		Method string                 `json:"method"`
 		SentAt time.Time              `json:"sent_at"`
 		Params map[string]interface{} `json:"params"`
-	}
-
-	Response struct {
-		ID     string                 `json:"id"`
-		Result map[string]interface{} `json:"result"`
 	}
 )
 
@@ -77,38 +72,38 @@ func (h *channels) GetSubscribers(channel string) []*model.User {
 	return result
 }
 
-func (r *Request) Validate() error {
-	if strings.TrimSpace(r.ID) == "" {
+func (m *Message) Validate() error {
+	if strings.TrimSpace(m.ID) == "" {
 		return fmt.Errorf("invalid request id")
 	}
 
-	if strings.TrimSpace(r.RoomID) == "" {
+	if strings.TrimSpace(m.RoomID) == "" {
 		return fmt.Errorf("invalid room id")
 	}
 
-	switch r.Method {
+	switch m.Method {
 	case "new_message":
-		content, ok := r.Params["content"].(string)
+		content, ok := m.Params["content"].(string)
 		if !ok || strings.TrimSpace(content) == "" {
-			return fmt.Errorf("invalid '%s' request, param 'content' is required and must be string", r.Method)
+			return fmt.Errorf("invalid '%s' request, param 'content' is required and must be string", m.Method)
 		}
 	case "edit_message":
-		_, ok := r.Params["message_id"].(int64)
+		_, ok := m.Params["message_id"].(int64)
 		if !ok {
-			return fmt.Errorf("invalid '%s' request, param 'message_id' is required and must be int", r.Method)
+			return fmt.Errorf("invalid '%s' request, param 'message_id' is required and must be int", m.Method)
 		}
 
-		content, ok := r.Params["content"].(string)
+		content, ok := m.Params["content"].(string)
 		if !ok || strings.TrimSpace(content) == "" {
-			return fmt.Errorf("invalid '%s' request, param 'content' is required and must be string", r.Method)
+			return fmt.Errorf("invalid '%s' request, param 'content' is required and must be string", m.Method)
 		}
 	case "remove_message":
-		_, ok := r.Params["message_id"].(int64)
+		_, ok := m.Params["message_id"].(int64)
 		if !ok {
-			return fmt.Errorf("invalid '%s' request, param 'message_id' is required and must be int", r.Method)
+			return fmt.Errorf("invalid '%s' request, param 'message_id' is required and must be int", m.Method)
 		}
 	default:
-		return fmt.Errorf("invalid request method: '%s'", r.Method)
+		return fmt.Errorf("invalid request method: '%s'", m.Method)
 	}
 
 	return nil

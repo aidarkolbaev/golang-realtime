@@ -106,7 +106,7 @@ func (api *API) getRoom(c echo.Context) error {
 func (api *API) websocketHandler(c echo.Context) error {
 	username := c.QueryParam("username")
 	roomID := c.QueryParam("room_id")
-	if !api.storage.RoomExist(roomID) {
+	if !api.storage.TempRoomExist(roomID) {
 		return c.NoContent(http.StatusNotFound)
 	}
 
@@ -136,6 +136,12 @@ func (api *API) serveUser(u *model.User) {
 
 	onConnect := func() {
 		api.channels.Subscribe(u, u.RoomID)
+
+		err := api.storage.AddUserToRoom(u.RoomID, u)
+		if err != nil {
+			log.Error(err)
+		}
+
 		ticker := time.NewTicker(time.Second * 30)
 		defer ticker.Stop()
 
@@ -157,27 +163,12 @@ func (api *API) serveUser(u *model.User) {
 		done <- true
 		_ = u.Conn.Close()
 		api.channels.Unsubscribe(u, u.RoomID)
-		log.Infof("user %s disconnected from room %s", u.Name, u.RoomID)
-	}
 
-	sendResponse := func(ID string, code int) {
-		res := &websocket.Response{
-			ID: ID,
-			Result: map[string]interface{}{
-				"success": code == 200,
-				"code":    code,
-			},
-		}
-
-		b, err := json.Marshal(res)
+		err := api.storage.RemoveUserFromRoom(u.RoomID, u.ID)
 		if err != nil {
 			log.Error(err)
-		} else {
-			err = wsutil.WriteServerText(u.Conn, b)
-			if err != nil {
-				log.Error(err)
-			}
 		}
+		log.Infof("user %s disconnected from room %s", u.Name, u.RoomID)
 	}
 
 	go onConnect()
@@ -189,16 +180,14 @@ func (api *API) serveUser(u *model.User) {
 			break
 		}
 
-		var req websocket.Request
+		var req websocket.Message
 		err = json.Unmarshal(b, &req)
 		if err != nil {
-			sendResponse("", 422)
 			continue
 		}
 
 		if err = req.Validate(); err != nil {
 			log.Warn(err)
-			sendResponse(req.ID, 422)
 			continue
 		}
 
@@ -208,16 +197,12 @@ func (api *API) serveUser(u *model.User) {
 		b, err = json.Marshal(&req)
 		if err != nil {
 			log.Error(err)
-			sendResponse(req.ID, 500)
 			continue
 		}
 
 		err = api.msgBroker.Publish(b, "messages:"+req.RoomID)
 		if err != nil {
 			log.Warn(err)
-			sendResponse(req.ID, 500)
-		} else {
-			sendResponse(req.ID, 200)
 		}
 	}
 }
