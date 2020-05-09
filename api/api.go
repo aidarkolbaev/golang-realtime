@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/gammazero/workerpool"
 	"github.com/gobwas/ws"
@@ -9,6 +10,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
 	"net/http"
+	"net/url"
 	"smotri.me/config"
 	"smotri.me/model"
 	"smotri.me/pkg/msgbroker"
@@ -39,9 +41,11 @@ func New(c *config.Config, s storage.Storage, mb msgbroker.MessageBroker) *API {
 	}
 
 	api.echo.HideBanner = true
+	api.echo.HidePort = true
 	api.echo.Use(middleware.CORS())
 
 	api.echo.GET("/", api.ping)
+	api.echo.GET("/visits", api.getVisits)
 	api.echo.POST("/room", api.createRoom)
 	api.echo.GET("/room/:roomID", api.getRoom)
 	api.echo.Any("/ws", api.websocketHandler)
@@ -49,17 +53,20 @@ func New(c *config.Config, s storage.Storage, mb msgbroker.MessageBroker) *API {
 	return api
 }
 
+// Starts server
 func (api *API) Start() error {
 	err := api.msgBroker.Subscribe("messages:*", api.handleMessages)
 	if err != nil {
 		return err
 	}
+	log.Infof("server started at port %d", api.config.HttpPort)
 	return api.echo.Start(":" + strconv.Itoa(api.config.HttpPort))
 }
 
-func (api *API) Close() error {
+// Closes server
+func (api *API) Close(ctx context.Context) error {
 	api.workerPool.StopWait()
-	return api.echo.Close()
+	return api.echo.Shutdown(ctx)
 }
 
 // Ping handler
@@ -69,6 +76,24 @@ func (api *API) ping(c echo.Context) error {
 		log.Error(err)
 	}
 	return c.String(http.StatusOK, "OK")
+}
+
+// Returns visits count by date
+func (api *API) getVisits(c echo.Context) error {
+	d, err := url.QueryUnescape(c.QueryParam("date"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	date, err := time.Parse("02.01.06", d)
+	if err != nil {
+		log.Info(err)
+		return echo.NewHTTPError(http.StatusBadRequest)
+	}
+	visits, err := api.storage.GetVisitsByDate(date)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound)
+	}
+	return c.JSON(http.StatusOK, map[string]int64{"visits": visits})
 }
 
 // Room creation endpoint
@@ -82,7 +107,7 @@ func (api *API) createRoom(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnprocessableEntity)
 	}
 
-	room.ID, err = api.storage.CreateTempRoom(&room, time.Minute*15)
+	room.ID, err = api.storage.CreateTempRoom(&room, time.Hour*24)
 	if err != nil {
 		log.Error(err)
 		return echo.NewHTTPError(http.StatusConflict)
@@ -126,29 +151,22 @@ func (api *API) websocketHandler(c echo.Context) error {
 		RoomID: roomID,
 		Conn:   conn,
 	}
+	api.userConnect(user)
 	api.serveUser(user)
+	api.userDisconnect(user)
 	return nil
 }
 
-// Serves user websocketHandler connection
+// Serves user websocket connection
 func (api *API) serveUser(u *model.User) {
 	done := make(chan bool)
 
-	onConnect := func() {
-		api.channels.Subscribe(u, u.RoomID)
-
-		err := api.storage.AddUserToRoom(u.RoomID, u)
-		if err != nil {
-			log.Error(err)
-		}
-
+	go func() {
 		ticker := time.NewTicker(time.Second * 30)
 		defer ticker.Stop()
-
 		for {
 			select {
 			case <-done:
-				log.Info("ticker stop")
 				return
 			case <-ticker.C:
 				err := wsutil.WriteServerMessage(u.Conn, ws.OpPing, []byte("ping"))
@@ -157,32 +175,19 @@ func (api *API) serveUser(u *model.User) {
 				}
 			}
 		}
-	}
-
-	onDisconnect := func() {
-		done <- true
-		_ = u.Conn.Close()
-		api.channels.Unsubscribe(u, u.RoomID)
-
-		err := api.storage.RemoveUserFromRoom(u.RoomID, u.ID)
-		if err != nil {
-			log.Error(err)
-		}
-		log.Infof("user %s disconnected from room %s", u.Name, u.RoomID)
-	}
-
-	go onConnect()
-	defer onDisconnect()
+	}()
 
 	for {
 		b, err := wsutil.ReadClientText(u.Conn)
 		if err != nil {
+			done <- true
 			break
 		}
 
 		var req websocket.Message
 		err = json.Unmarshal(b, &req)
 		if err != nil {
+			log.Warn(err)
 			continue
 		}
 
@@ -207,13 +212,68 @@ func (api *API) serveUser(u *model.User) {
 	}
 }
 
-// Message handler
+// Websocket connect handler
+func (api *API) userConnect(u *model.User) {
+	api.channels.Subscribe(u, u.RoomID)
+
+	err := api.storage.AddUserToRoom(u.RoomID, u)
+	if err != nil {
+		log.Error(err)
+	}
+
+	b, err := json.Marshal(&websocket.Message{
+		UserID: u.ID,
+		RoomID: u.RoomID,
+		Method: "user_connect",
+		SentAt: time.Now(),
+		Params: map[string]interface{}{
+			"name": u.Name,
+		},
+	})
+
+	if err != nil {
+		log.Error(err)
+	} else {
+		err = api.msgBroker.Publish(b, "messages:"+u.RoomID)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+}
+
+// Websocket disconnect handler
+func (api *API) userDisconnect(u *model.User) {
+	_ = u.Conn.Close()
+	api.channels.Unsubscribe(u, u.RoomID)
+
+	err := api.storage.RemoveUserFromRoom(u.RoomID, u.ID)
+	if err != nil {
+		log.Error(err)
+	}
+
+	b, err := json.Marshal(&websocket.Message{
+		UserID: u.ID,
+		RoomID: u.RoomID,
+		Method: "user_disconnect",
+		SentAt: time.Now(),
+	})
+	if err != nil {
+		log.Error(err)
+	} else {
+		err = api.msgBroker.Publish(b, "messages:"+u.RoomID)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+
+	log.Infof("user '%s' disconnected from room '%s'", u.Name, u.RoomID)
+}
+
+// Message broker messages handler
 func (api *API) handleMessages(msg *msgbroker.Message) {
 	api.workerPool.Submit(func() {
-		log.Info(msg.Channel)
 		if len(msg.Channel) > len("messages:") {
 			roomID := msg.Channel[len("messages:"):]
-			log.Info("roomID:" + roomID)
 			users := api.channels.GetSubscribers(roomID)
 			for _, u := range users {
 				err := wsutil.WriteServerText(u.Conn, msg.Data)

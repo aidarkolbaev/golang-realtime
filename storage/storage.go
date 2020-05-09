@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/go-redis/redis/v7"
 	"smotri.me/model"
 	"smotri.me/pkg/utils"
@@ -10,13 +11,14 @@ import (
 )
 
 type Storage interface {
+	TempRoomExist(roomID string) bool
 	CreateTempRoom(room *model.Room, exp time.Duration) (ID string, err error)
 	GetTempRoom(roomID string) (*model.Room, error)
 	UpdateTempRoom(room *model.Room) error
 	AddUserToRoom(roomID string, u *model.User) error
 	RemoveUserFromRoom(roomID string, userID string) error
 	IncrVisits() (int64, error)
-	TempRoomExist(roomID string) bool
+	GetVisitsByDate(date time.Time) (int64, error)
 }
 
 type storage struct {
@@ -49,11 +51,11 @@ func (s *storage) CreateTempRoom(room *model.Room, exp time.Duration) (string, e
 
 	affectedFields := s.rdb.HSet("room:"+ID, data).Val()
 	if affectedFields != 3 {
-		return "", errors.New("invalid affected fields num")
+		return "", fmt.Errorf("invalid affected fields num: %d", affectedFields)
 	}
 	ok := s.rdb.Expire("room:"+ID, exp).Val()
 	if !ok {
-		return "", errors.New("timeout was not set, key " + ID + " does not exist")
+		return "", fmt.Errorf("timeout was not set, key '%s' does not exist", ID)
 	}
 	return ID, nil
 }
@@ -62,7 +64,7 @@ func (s *storage) GetTempRoom(roomID string) (*model.Room, error) {
 	var r model.Room
 	data := s.rdb.HGetAll("room:" + roomID).Val()
 	if len(data) == 0 {
-		return nil, errors.New("room " + roomID + " not found")
+		return nil, fmt.Errorf("room '%s' not found", roomID)
 	}
 
 	membersJSON, exists := data["members"]
@@ -81,7 +83,7 @@ func (s *storage) GetTempRoom(roomID string) (*model.Room, error) {
 
 func (s *storage) UpdateTempRoom(room *model.Room) error {
 	if room.ID == "" {
-		return errors.New("room id is required")
+		return fmt.Errorf("invalid room id: %s", room.ID)
 	}
 
 	membersJSON, err := json.Marshal(room.Members)
@@ -96,10 +98,7 @@ func (s *storage) UpdateTempRoom(room *model.Room) error {
 		"members":   string(membersJSON),
 	}
 
-	affectedFields := s.rdb.HSet("room:"+room.ID, data).Val()
-	if affectedFields != 4 {
-		return errors.New("invalid affected fields num")
-	}
+	_ = s.rdb.HSet("room:"+room.ID, data).Val()
 	return nil
 }
 
@@ -131,6 +130,10 @@ func (s *storage) RemoveUserFromRoom(roomID string, userID string) error {
 
 func (s *storage) IncrVisits() (int64, error) {
 	return s.rdb.Incr("visits:" + time.Now().Format("02.01.06")).Result()
+}
+
+func (s *storage) GetVisitsByDate(date time.Time) (int64, error) {
+	return s.rdb.Get("visits:" + date.Format("02.01.06")).Int64()
 }
 
 func (s *storage) TempRoomExist(roomID string) bool {

@@ -57,10 +57,6 @@ func (rb *redisBroker) Subscribe(pattern string, cb MessageHandler) error {
 	if err != nil {
 		return err
 	}
-	_, err = rb.pubSub.Receive()
-	if err != nil {
-		return err
-	}
 	rb.Lock()
 	rb.handlers[pattern] = cb
 	rb.Unlock()
