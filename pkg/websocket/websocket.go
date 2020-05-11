@@ -25,7 +25,7 @@ type (
 		UserID string                 `json:"user_id"`
 		RoomID string                 `json:"room_id"`
 		Method string                 `json:"method"`
-		SentAt time.Time              `json:"sent_at"`
+		SentAt time.Time              `json:"sent_at,omitempty"`
 		Params map[string]interface{} `json:"params,omitempty"`
 	}
 )
@@ -98,6 +98,12 @@ func (m *Message) Validate() error {
 		if !ok {
 			return fmt.Errorf("invalid '%s' request, param 'message_id' is required and must be int", m.Method)
 		}
+	case "movie_sync", "movie_stop", "movie_start", "movie_rewind":
+		_, ok := m.Params["second"].(int64)
+		if !ok {
+			return fmt.Errorf("invalid '%s' request, param 'second' is required and must be int", m.Method)
+		}
+
 	default:
 		return fmt.Errorf("invalid request method: '%s'", m.Method)
 	}
