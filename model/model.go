@@ -17,6 +17,7 @@ type (
 		ID     string   `json:"id"`
 		Name   string   `json:"name"`
 		RoomID string   `json:"room_id"`
+		Color  string   `json:"color"`
 		Conn   net.Conn `json:"-"`
 	}
 )

@@ -23,7 +23,6 @@ type (
 	Message struct {
 		ID     string                 `json:"id,omitempty"`
 		UserID string                 `json:"user_id"`
-		RoomID string                 `json:"room_id"`
 		Method string                 `json:"method"`
 		SentAt time.Time              `json:"sent_at,omitempty"`
 		Params map[string]interface{} `json:"params,omitempty"`
@@ -73,10 +72,6 @@ func (h *channels) GetSubscribers(channel string) []*model.User {
 }
 
 func (m *Message) Validate() error {
-	if strings.TrimSpace(m.ID) == "" {
-		return fmt.Errorf("request id is required")
-	}
-
 	switch m.Method {
 	case "new_message":
 		content, ok := m.Params["content"].(string)

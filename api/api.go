@@ -131,6 +131,7 @@ func (api *API) getRoom(c echo.Context) error {
 func (api *API) websocketHandler(c echo.Context) error {
 	username := c.QueryParam("username")
 	roomID := c.QueryParam("room_id")
+	color := c.QueryParam("color")
 	if !api.storage.TempRoomExist(roomID) {
 		return c.NoContent(http.StatusNotFound)
 	}
@@ -149,11 +150,12 @@ func (api *API) websocketHandler(c echo.Context) error {
 		ID:     roomID + utils.RandString(5),
 		Name:   username,
 		RoomID: roomID,
+		Color:  color,
 		Conn:   conn,
 	}
-	api.userConnect(user)
+	api.handleUserConnect(user)
 	api.serveUser(user)
-	api.userDisconnect(user)
+	api.handleUserDisconnect(user)
 	return nil
 }
 
@@ -196,8 +198,10 @@ func (api *API) serveUser(u *model.User) {
 			continue
 		}
 
+		if req.Method == "new_message" {
+			req.ID = utils.RandString(5)
+		}
 		req.UserID = u.ID
-		req.RoomID = u.RoomID
 		req.SentAt = time.Now()
 		b, err = json.Marshal(&req)
 		if err != nil {
@@ -205,7 +209,7 @@ func (api *API) serveUser(u *model.User) {
 			continue
 		}
 
-		err = api.msgBroker.Publish(b, "messages:"+req.RoomID)
+		err = api.msgBroker.Publish(b, "messages:"+u.RoomID)
 		if err != nil {
 			log.Warn(err)
 		}
@@ -213,7 +217,7 @@ func (api *API) serveUser(u *model.User) {
 }
 
 // Websocket connect handler
-func (api *API) userConnect(u *model.User) {
+func (api *API) handleUserConnect(u *model.User) {
 	api.channels.Subscribe(u, u.RoomID)
 
 	err := api.storage.AddUserToRoom(u.RoomID, u)
@@ -221,28 +225,42 @@ func (api *API) userConnect(u *model.User) {
 		log.Error(err)
 	}
 
-	b, err := json.Marshal(&websocket.Message{
+	msg := &websocket.Message{
 		UserID: u.ID,
-		RoomID: u.RoomID,
-		Method: "user_connect",
+		Method: "new_user",
 		SentAt: time.Now(),
 		Params: map[string]interface{}{
-			"name": u.Name,
+			"id":    u.ID,
+			"name":  u.Name,
+			"color": u.Color,
 		},
-	})
+	}
+
+	b, err := json.Marshal(msg)
 
 	if err != nil {
 		log.Error(err)
-	} else {
-		err = api.msgBroker.Publish(b, "messages:"+u.RoomID)
-		if err != nil {
-			log.Error(err)
-		}
+		return
+	}
+
+	if err = api.msgBroker.Publish(b, "messages:"+u.RoomID); err != nil {
+		log.Error(err)
+		return
+	}
+
+	msg.Method = "your_data"
+	if b, err = json.Marshal(msg); err != nil {
+		log.Error(err)
+		return
+	}
+
+	if err = wsutil.WriteServerText(u.Conn, b); err != nil {
+		log.Error(err)
 	}
 }
 
 // Websocket disconnect handler
-func (api *API) userDisconnect(u *model.User) {
+func (api *API) handleUserDisconnect(u *model.User) {
 	_ = u.Conn.Close()
 	api.channels.Unsubscribe(u, u.RoomID)
 
@@ -253,8 +271,7 @@ func (api *API) userDisconnect(u *model.User) {
 
 	b, err := json.Marshal(&websocket.Message{
 		UserID: u.ID,
-		RoomID: u.RoomID,
-		Method: "user_disconnect",
+		Method: "user_logout",
 		SentAt: time.Now(),
 	})
 	if err != nil {
