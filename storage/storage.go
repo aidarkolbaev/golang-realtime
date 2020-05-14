@@ -107,6 +107,11 @@ func (s *storage) AddUserToRoom(roomID string, u *model.User) error {
 	if err != nil {
 		return err
 	}
+	for _, member := range room.Members {
+		if member.ID == u.ID {
+			return fmt.Errorf("member with ID:%s already exists", member.ID)
+		}
+	}
 	room.Members = append(room.Members, u)
 	return s.UpdateTempRoom(room)
 }
@@ -122,10 +127,9 @@ func (s *storage) RemoveUserFromRoom(roomID string, userID string) error {
 			room.Members[i] = room.Members[lastElem]
 			room.Members[lastElem] = nil
 			room.Members = room.Members[:lastElem]
-			return s.UpdateTempRoom(room)
 		}
 	}
-	return nil
+	return s.UpdateTempRoom(room)
 }
 
 func (s *storage) IncrVisits() (int64, error) {

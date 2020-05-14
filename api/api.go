@@ -161,11 +161,12 @@ func (api *API) websocketHandler(c echo.Context) error {
 
 // Serves user websocket connection
 func (api *API) serveUser(u *model.User) {
-	done := make(chan bool)
+	done := make(chan bool, 1)
 
 	go func() {
 		ticker := time.NewTicker(time.Second * 30)
 		defer ticker.Stop()
+		var pingAttempts int
 		for {
 			select {
 			case <-done:
@@ -174,6 +175,13 @@ func (api *API) serveUser(u *model.User) {
 				err := wsutil.WriteServerMessage(u.Conn, ws.OpPing, []byte("ping"))
 				if err != nil {
 					log.Warn(err)
+					pingAttempts++
+					if pingAttempts >= 5 {
+						log.Infof("closing '%s' connection after '%d' ping attempts", u.Name, pingAttempts)
+						_ = u.Conn.Close()
+					}
+				} else {
+					pingAttempts = 0
 				}
 			}
 		}
