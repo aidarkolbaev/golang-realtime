@@ -104,3 +104,9 @@ func TestIsUrlValid(t *testing.T) {
 
 	assert.False(t, IsUrlValid("ftp://test.com"))
 }
+
+func TestGetRandomColor(t *testing.T) {
+	for i := 0; i < 10; i++ {
+		GetRandomColor()
+	}
+}

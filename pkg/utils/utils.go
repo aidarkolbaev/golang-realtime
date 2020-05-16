@@ -13,7 +13,14 @@ var (
 	emailRegex = regexp.MustCompile("(?i)^[a-z0-9_.+-]+@[a-z0-9-]+\\.[a-z0-9-.]+$")
 	nameRegex  = regexp.MustCompile("(?i)^[a-zа-яА-Я0-9]+[a-zа-яА-Я0-9 :_-]*[a-zа-яА-Я0-9]+$")
 	urlRegex   = regexp.MustCompile(`^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/)?[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$`)
+	colors     = []string{
+		"white", "black", "red", "maroon", "yellow", "lime", "green", "aqua", "teal", "blue", "navy", "fuchsia", "purple",
+	}
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const (
@@ -73,4 +80,8 @@ func IsNameValid(name string) bool {
 
 func IsUrlValid(url string) bool {
 	return urlRegex.MatchString(url)
+}
+
+func GetRandomColor() string {
+	return colors[rand.Intn(len(colors)-1)]
 }

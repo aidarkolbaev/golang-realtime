@@ -43,6 +43,7 @@ func New(c *config.Config, s storage.Storage, mb msgbroker.MessageBroker) *API {
 	api.echo.HideBanner = true
 	api.echo.HidePort = true
 	api.echo.Use(middleware.CORS())
+	api.echo.Use(middleware.Recover())
 
 	api.echo.GET("/", api.ping)
 	api.echo.GET("/visits", api.getVisits)
@@ -131,7 +132,6 @@ func (api *API) getRoom(c echo.Context) error {
 func (api *API) websocketHandler(c echo.Context) error {
 	username := c.QueryParam("username")
 	roomID := c.QueryParam("room_id")
-	color := c.QueryParam("color")
 	if !api.storage.TempRoomExist(roomID) {
 		return c.NoContent(http.StatusNotFound)
 	}
@@ -150,9 +150,14 @@ func (api *API) websocketHandler(c echo.Context) error {
 		ID:     roomID + utils.RandString(5),
 		Name:   username,
 		RoomID: roomID,
-		Color:  color,
+		Color:  utils.GetRandomColor(),
 		Conn:   conn,
 	}
+
+	if err = user.Conn.SetDeadline(time.Now().Add(time.Minute)); err != nil {
+		log.Error(err)
+	}
+
 	api.handleUserConnect(user)
 	api.serveUser(user)
 	api.handleUserDisconnect(user)
@@ -161,12 +166,11 @@ func (api *API) websocketHandler(c echo.Context) error {
 
 // Serves user websocket connection
 func (api *API) serveUser(u *model.User) {
-	done := make(chan bool, 1)
+	done := make(chan bool)
 
 	go func() {
 		ticker := time.NewTicker(time.Second * 30)
 		defer ticker.Stop()
-		var pingAttempts int
 		for {
 			select {
 			case <-done:
@@ -175,13 +179,7 @@ func (api *API) serveUser(u *model.User) {
 				err := wsutil.WriteServerMessage(u.Conn, ws.OpPing, []byte("ping"))
 				if err != nil {
 					log.Warn(err)
-					pingAttempts++
-					if pingAttempts >= 5 {
-						log.Infof("closing '%s' connection after '%d' ping attempts", u.Name, pingAttempts)
-						_ = u.Conn.Close()
-					}
-				} else {
-					pingAttempts = 0
+					_ = u.Conn.Close()
 				}
 			}
 		}
@@ -194,24 +192,24 @@ func (api *API) serveUser(u *model.User) {
 			break
 		}
 
-		var req websocket.Message
-		err = json.Unmarshal(b, &req)
+		var msg websocket.Message
+		err = json.Unmarshal(b, &msg)
 		if err != nil {
 			log.Warn(err)
 			continue
 		}
 
-		if err = req.Validate(); err != nil {
+		if err = msg.Validate(); err != nil {
 			log.Warn(err)
 			continue
 		}
 
-		if req.Method == "new_message" {
-			req.ID = utils.RandString(5)
+		if msg.Method == "new_message" {
+			msg.ID = utils.RandString(5)
 		}
-		req.UserID = u.ID
-		req.SentAt = time.Now()
-		b, err = json.Marshal(&req)
+		msg.UserID = u.ID
+		msg.SentAt = time.Now()
+		b, err = json.Marshal(&msg)
 		if err != nil {
 			log.Error(err)
 			continue
@@ -290,8 +288,6 @@ func (api *API) handleUserDisconnect(u *model.User) {
 			log.Error(err)
 		}
 	}
-
-	log.Infof("user '%s' disconnected from room '%s'", u.Name, u.RoomID)
 }
 
 // Message broker messages handler
