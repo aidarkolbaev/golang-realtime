@@ -154,10 +154,6 @@ func (api *API) websocketHandler(c echo.Context) error {
 		Conn:   conn,
 	}
 
-	if err = user.Conn.SetDeadline(time.Now().Add(time.Minute)); err != nil {
-		log.Error(err)
-	}
-
 	api.handleUserConnect(user)
 	api.serveUser(user)
 	api.handleUserDisconnect(user)
@@ -188,6 +184,7 @@ func (api *API) serveUser(u *model.User) {
 	for {
 		b, err := wsutil.ReadClientText(u.Conn)
 		if err != nil {
+			log.Warn(err)
 			done <- true
 			break
 		}
