@@ -162,7 +162,7 @@ func (api *API) websocketHandler(c echo.Context) error {
 
 // Serves user websocket connection
 func (api *API) serveUser(u *model.User) {
-	done := make(chan bool)
+	done := make(chan bool, 1)
 
 	go func() {
 		ticker := time.NewTicker(time.Second * 30)
@@ -175,7 +175,7 @@ func (api *API) serveUser(u *model.User) {
 				err := wsutil.WriteServerMessage(u.Conn, ws.OpPing, []byte("ping"))
 				if err != nil {
 					log.Warn(err)
-					_ = u.Conn.Close()
+					return
 				}
 			}
 		}
@@ -184,13 +184,12 @@ func (api *API) serveUser(u *model.User) {
 	for {
 		b, err := wsutil.ReadClientText(u.Conn)
 		if err != nil {
-			log.Warn(err)
 			done <- true
 			break
 		}
 
-		var msg websocket.Message
-		err = json.Unmarshal(b, &msg)
+		msg := websocket.NewMessage()
+		err = json.Unmarshal(b, msg)
 		if err != nil {
 			log.Warn(err)
 			continue
@@ -201,18 +200,55 @@ func (api *API) serveUser(u *model.User) {
 			continue
 		}
 
-		if msg.Method == "new_message" {
+		switch msg.Method {
+		case "new_message":
 			msg.ID = utils.RandString(5)
+		case "rename_user":
+			u.Name, _ = msg.Params["name"].(string)
+			err = api.storage.UpdateRoomUser(u.RoomID, u)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+		case "update_room":
+			title, _ := msg.Params["title"].(string)
+			movieURL, _ := msg.Params["movie_url"].(string)
+			err = api.storage.UpdateTempRoom(&model.Room{
+				ID:       u.RoomID,
+				Title:    title,
+				MovieURL: movieURL,
+			})
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+		case "get_me":
+			msg.Params["id"] = u.ID
+			msg.Params["name"] = u.Name
+			msg.Params["color"] = u.Color
+			msg.Response = true
+		case "get_members":
+			room, err := api.storage.GetTempRoom(u.RoomID)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			msg.Params["members"] = room.Members
+			msg.Response = true
 		}
+
 		msg.UserID = u.ID
-		msg.SentAt = time.Now()
 		b, err = json.Marshal(&msg)
 		if err != nil {
 			log.Error(err)
 			continue
 		}
 
-		err = api.msgBroker.Publish(b, "messages:"+u.RoomID)
+		if msg.Response {
+			err = wsutil.WriteServerText(u.Conn, b)
+		} else {
+			err = api.msgBroker.Publish(b, "messages:"+u.RoomID)
+		}
 		if err != nil {
 			log.Warn(err)
 		}
@@ -231,7 +267,6 @@ func (api *API) handleUserConnect(u *model.User) {
 	msg := &websocket.Message{
 		UserID: u.ID,
 		Method: "new_user",
-		SentAt: time.Now(),
 		Params: map[string]interface{}{
 			"id":    u.ID,
 			"name":  u.Name,
@@ -250,16 +285,6 @@ func (api *API) handleUserConnect(u *model.User) {
 		log.Error(err)
 		return
 	}
-
-	msg.Method = "your_data"
-	if b, err = json.Marshal(msg); err != nil {
-		log.Error(err)
-		return
-	}
-
-	if err = wsutil.WriteServerText(u.Conn, b); err != nil {
-		log.Error(err)
-	}
 }
 
 // Websocket disconnect handler
@@ -267,6 +292,7 @@ func (api *API) handleUserDisconnect(u *model.User) {
 	_ = u.Conn.Close()
 	api.channels.Unsubscribe(u, u.RoomID)
 
+	// TODO check panic
 	err := api.storage.RemoveUserFromRoom(u.RoomID, u.ID)
 	if err != nil {
 		log.Error(err)
@@ -275,7 +301,6 @@ func (api *API) handleUserDisconnect(u *model.User) {
 	b, err := json.Marshal(&websocket.Message{
 		UserID: u.ID,
 		Method: "user_logout",
-		SentAt: time.Now(),
 	})
 	if err != nil {
 		log.Error(err)

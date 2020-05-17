@@ -3,9 +3,9 @@ package websocket
 import (
 	"fmt"
 	"smotri.me/model"
+	"smotri.me/pkg/utils"
 	"strings"
 	"sync"
-	"time"
 )
 
 type Channels interface {
@@ -21,13 +21,19 @@ type (
 	}
 
 	Message struct {
-		ID     string                 `json:"id,omitempty"`
-		UserID string                 `json:"user_id"`
-		Method string                 `json:"method"`
-		SentAt time.Time              `json:"sent_at,omitempty"`
-		Params map[string]interface{} `json:"params,omitempty"`
+		ID       string                 `json:"id,omitempty"`
+		UserID   string                 `json:"user_id"`
+		Method   string                 `json:"method"`
+		Params   map[string]interface{} `json:"params,omitempty"`
+		Response bool                   `json:"-"`
 	}
 )
+
+func NewMessage() *Message {
+	return &Message{
+		Params: make(map[string]interface{}),
+	}
+}
 
 func NewChannels() Channels {
 	return &channels{
@@ -79,7 +85,7 @@ func (m *Message) Validate() error {
 			return fmt.Errorf("invalid '%s' request, param 'content' is required and must be string", m.Method)
 		}
 	case "edit_message":
-		_, ok := m.Params["message_id"].(int64)
+		_, ok := m.Params["message_id"].(string)
 		if !ok {
 			return fmt.Errorf("invalid '%s' request, param 'message_id' is required and must be int", m.Method)
 		}
@@ -89,16 +95,40 @@ func (m *Message) Validate() error {
 			return fmt.Errorf("invalid '%s' request, param 'content' is required and must be string", m.Method)
 		}
 	case "remove_message":
-		_, ok := m.Params["message_id"].(int64)
+		_, ok := m.Params["message_id"].(string)
 		if !ok {
 			return fmt.Errorf("invalid '%s' request, param 'message_id' is required and must be int", m.Method)
+		}
+	case "rename_user":
+		name, ok := m.Params["name"].(string)
+		if !ok {
+			return fmt.Errorf("invalid '%s' request, param 'name' is required and must be string", m.Method)
+		}
+		if !utils.IsNameValid(name) {
+			return fmt.Errorf("invalid '%s' request, param 'name' is invalid", m.Method)
+		}
+	case "update_room":
+		title, ok := m.Params["title"].(string)
+		if !ok {
+			return fmt.Errorf("invalid '%s' request, param 'title' is required and must be string", m.Method)
+		}
+		if !utils.IsLengthValid(title, 2, 100) {
+			return fmt.Errorf("invalid '%s' request, param 'title' is invalid", m.Method)
+		}
+
+		movieURL, ok := m.Params["movie_url"].(string)
+		if !ok {
+			return fmt.Errorf("invalid '%s' request, param 'movie_url' is required and must be string", m.Method)
+		}
+		if !utils.IsUrlValid(movieURL) {
+			return fmt.Errorf("invalid '%s' request, param 'movie_url' is invalid", m.Method)
 		}
 	case "movie_sync", "movie_stop", "movie_start", "movie_rewind":
 		_, ok := m.Params["second"].(int64)
 		if !ok {
 			return fmt.Errorf("invalid '%s' request, param 'second' is required and must be int", m.Method)
 		}
-
+	case "get_members", "get_me":
 	default:
 		return fmt.Errorf("invalid request method: '%s'", m.Method)
 	}

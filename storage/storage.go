@@ -16,6 +16,7 @@ type Storage interface {
 	GetTempRoom(roomID string) (*model.Room, error)
 	UpdateTempRoom(room *model.Room) error
 	AddUserToRoom(roomID string, u *model.User) error
+	UpdateRoomUser(roomID string, u *model.User) error
 	RemoveUserFromRoom(roomID string, userID string) error
 	IncrVisits() (int64, error)
 	GetVisitsByDate(date time.Time) (int64, error)
@@ -73,6 +74,8 @@ func (s *storage) GetTempRoom(roomID string) (*model.Room, error) {
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		r.Members = []*model.User{}
 	}
 
 	r.ID = data["id"]
@@ -86,16 +89,9 @@ func (s *storage) UpdateTempRoom(room *model.Room) error {
 		return fmt.Errorf("invalid room id: %s", room.ID)
 	}
 
-	membersJSON, err := json.Marshal(room.Members)
-	if err != nil {
-		return err
-	}
-
 	data := map[string]interface{}{
-		"id":        room.ID,
 		"title":     room.Title,
 		"movie_url": room.MovieURL,
-		"members":   string(membersJSON),
 	}
 
 	_ = s.rdb.HSet("room:"+room.ID, data).Val()
@@ -113,7 +109,40 @@ func (s *storage) AddUserToRoom(roomID string, u *model.User) error {
 		}
 	}
 	room.Members = append(room.Members, u)
-	return s.UpdateTempRoom(room)
+	membersJSON, err := json.Marshal(room.Members)
+	if err != nil {
+		return err
+	}
+
+	data := map[string]interface{}{
+		"members": string(membersJSON),
+	}
+	_ = s.rdb.HSet("room:"+room.ID, data).Val()
+	return nil
+}
+
+func (s *storage) UpdateRoomUser(roomID string, u *model.User) error {
+	room, err := s.GetTempRoom(roomID)
+	if err != nil {
+		return err
+	}
+	for idx, member := range room.Members {
+		if member.ID == u.ID {
+			room.Members[idx] = u
+			break
+		}
+	}
+
+	membersJSON, err := json.Marshal(room.Members)
+	if err != nil {
+		return err
+	}
+
+	data := map[string]interface{}{
+		"members": string(membersJSON),
+	}
+	_ = s.rdb.HSet("room:"+room.ID, data).Val()
+	return nil
 }
 
 func (s *storage) RemoveUserFromRoom(roomID string, userID string) error {
@@ -129,7 +158,17 @@ func (s *storage) RemoveUserFromRoom(roomID string, userID string) error {
 			room.Members = room.Members[:lastElem]
 		}
 	}
-	return s.UpdateTempRoom(room)
+
+	membersJSON, err := json.Marshal(room.Members)
+	if err != nil {
+		return err
+	}
+
+	data := map[string]interface{}{
+		"members": string(membersJSON),
+	}
+	_ = s.rdb.HSet("room:"+room.ID, data).Val()
+	return nil
 }
 
 func (s *storage) IncrVisits() (int64, error) {
