@@ -203,7 +203,7 @@ func (api *API) serveUser(u *model.User) {
 		switch msg.Method {
 		case "new_message":
 			msg.ID = utils.RandString(5)
-		case "rename_user":
+		case "rename_member":
 			u.Name, _ = msg.Params["name"].(string)
 			err = api.storage.UpdateRoomUser(u.RoomID, u)
 			if err != nil {
@@ -266,7 +266,7 @@ func (api *API) handleUserConnect(u *model.User) {
 
 	msg := &websocket.Message{
 		UserID: u.ID,
-		Method: "new_user",
+		Method: "new_member",
 		Params: map[string]interface{}{
 			"id":    u.ID,
 			"name":  u.Name,
@@ -300,7 +300,7 @@ func (api *API) handleUserDisconnect(u *model.User) {
 
 	b, err := json.Marshal(&websocket.Message{
 		UserID: u.ID,
-		Method: "user_logout",
+		Method: "logout_member",
 	})
 	if err != nil {
 		log.Error(err)

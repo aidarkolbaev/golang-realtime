@@ -99,7 +99,7 @@ func (m *Message) Validate() error {
 		if !ok {
 			return fmt.Errorf("invalid '%s' request, param 'message_id' is required and must be int", m.Method)
 		}
-	case "rename_user":
+	case "rename_member":
 		name, ok := m.Params["name"].(string)
 		if !ok {
 			return fmt.Errorf("invalid '%s' request, param 'name' is required and must be string", m.Method)
