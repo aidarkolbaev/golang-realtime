@@ -124,10 +124,6 @@ func (m *Message) Validate() error {
 			return fmt.Errorf("invalid '%s' request, param 'video_url' is invalid", m.Method)
 		}
 	case "video_sync", "video_play", "video_pause":
-		_, ok := m.Params["time"].(int)
-		if !ok {
-			return fmt.Errorf("invalid '%s' request, param 'time' is required and must be int", m.Method)
-		}
 	case "get_members", "get_me":
 	default:
 		return fmt.Errorf("invalid request method: '%s'", m.Method)
