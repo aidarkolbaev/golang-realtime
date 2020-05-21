@@ -116,15 +116,15 @@ func (m *Message) Validate() error {
 			return fmt.Errorf("invalid '%s' request, param 'title' is invalid", m.Method)
 		}
 
-		movieURL, ok := m.Params["movie_url"].(string)
+		videoURL, ok := m.Params["video_url"].(string)
 		if !ok {
-			return fmt.Errorf("invalid '%s' request, param 'movie_url' is required and must be string", m.Method)
+			return fmt.Errorf("invalid '%s' request, param 'video_url' is required and must be string", m.Method)
 		}
-		if !utils.IsUrlValid(movieURL) {
-			return fmt.Errorf("invalid '%s' request, param 'movie_url' is invalid", m.Method)
+		if !utils.IsUrlValid(videoURL) {
+			return fmt.Errorf("invalid '%s' request, param 'video_url' is invalid", m.Method)
 		}
-	case "movie_sync", "movie_stop", "movie_start", "movie_rewind":
-		_, ok := m.Params["second"].(int64)
+	case "video_sync", "video_play", "video_pause":
+		_, ok := m.Params["time"].(int64)
 		if !ok {
 			return fmt.Errorf("invalid '%s' request, param 'second' is required and must be int", m.Method)
 		}

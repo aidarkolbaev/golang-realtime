@@ -47,7 +47,7 @@ func (s *storage) CreateTempRoom(room *model.Room, exp time.Duration) (string, e
 	data := map[string]interface{}{
 		"id":        ID,
 		"title":     room.Title,
-		"movie_url": room.MovieURL,
+		"video_url": room.VideoURL,
 	}
 
 	affectedFields := s.rdb.HSet("room:"+ID, data).Val()
@@ -80,7 +80,7 @@ func (s *storage) GetTempRoom(roomID string) (*model.Room, error) {
 
 	r.ID = data["id"]
 	r.Title = data["title"]
-	r.MovieURL = data["movie_url"]
+	r.VideoURL = data["video_url"]
 	return &r, nil
 }
 
@@ -91,7 +91,7 @@ func (s *storage) UpdateTempRoom(room *model.Room) error {
 
 	data := map[string]interface{}{
 		"title":     room.Title,
-		"movie_url": room.MovieURL,
+		"video_url": room.VideoURL,
 	}
 
 	_ = s.rdb.HSet("room:"+room.ID, data).Val()

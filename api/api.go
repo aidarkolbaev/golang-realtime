@@ -212,11 +212,11 @@ func (api *API) serveUser(u *model.User) {
 			}
 		case "update_room":
 			title, _ := msg.Params["title"].(string)
-			movieURL, _ := msg.Params["movie_url"].(string)
+			videoURL, _ := msg.Params["video_url"].(string)
 			err = api.storage.UpdateTempRoom(&model.Room{
 				ID:       u.RoomID,
 				Title:    title,
-				MovieURL: movieURL,
+				VideoURL: videoURL,
 			})
 			if err != nil {
 				log.Error(err)

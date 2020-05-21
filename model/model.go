@@ -9,7 +9,7 @@ type (
 	Room struct {
 		ID       string  `json:"id"`
 		Title    string  `json:"title"`
-		MovieURL string  `json:"movie_url"`
+		VideoURL string  `json:"video_url"`
 		Members  []*User `json:"members"`
 	}
 
@@ -23,5 +23,5 @@ type (
 )
 
 func (r *Room) Valid() bool {
-	return utils.IsLengthValid(r.Title, 2, 100) && utils.IsUrlValid(r.MovieURL)
+	return utils.IsLengthValid(r.Title, 2, 100) && utils.IsUrlValid(r.VideoURL)
 }
