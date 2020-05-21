@@ -328,6 +328,5 @@ func (api *API) handleMessages(msg *msgbroker.Message) {
 				}
 			}
 		}
-
 	})
 }
