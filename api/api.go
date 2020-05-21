@@ -152,6 +152,7 @@ func (api *API) websocketHandler(c echo.Context) error {
 		RoomID: roomID,
 		Color:  utils.GetRandomColor(),
 		Conn:   conn,
+		Time:   0,
 	}
 
 	api.handleUserConnect(user)
@@ -226,6 +227,7 @@ func (api *API) serveUser(u *model.User) {
 			msg.Params["id"] = u.ID
 			msg.Params["name"] = u.Name
 			msg.Params["color"] = u.Color
+			msg.Params["time"] = u.Time
 			msg.Response = true
 		case "get_members":
 			room, err := api.storage.GetTempRoom(u.RoomID)
@@ -271,6 +273,7 @@ func (api *API) handleUserConnect(u *model.User) {
 			"id":    u.ID,
 			"name":  u.Name,
 			"color": u.Color,
+			"time":  u.Time,
 		},
 	}
 
