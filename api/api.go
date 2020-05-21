@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"smotri.me/config"
 	"smotri.me/model"
+	"smotri.me/pkg/cors"
 	"smotri.me/pkg/msgbroker"
 	"smotri.me/pkg/utils"
 	"smotri.me/pkg/websocket"
@@ -42,7 +43,7 @@ func New(c *config.Config, s storage.Storage, mb msgbroker.MessageBroker) *API {
 
 	api.echo.HideBanner = true
 	api.echo.HidePort = true
-	api.echo.Use(middleware.CORS())
+	api.echo.Use(cors.Middleware)
 	api.echo.Use(middleware.Recover())
 
 	api.echo.GET("/", api.ping)
