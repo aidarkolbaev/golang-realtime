@@ -156,6 +156,7 @@ func (s *storage) RemoveUserFromRoom(roomID string, userID string) error {
 			room.Members[i] = room.Members[lastElem]
 			room.Members[lastElem] = nil
 			room.Members = room.Members[:lastElem]
+			break
 		}
 	}
 
